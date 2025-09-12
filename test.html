@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>English Learning Scratch Cards</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)),
+            url('test.png') no-repeat center center fixed;
+
+      background-size: cover;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+      color: #fff;
+      text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.7);
+    }
+
+    .card-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 20px;
+      width: 90%;
+      max-width: 1000px;
+    }
+
+    .card {
+      position: relative;
+      width: 160px;
+      height: 160px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+      background: #fff;
+      text-align: center;
+    }
+
+    .card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .label {
+      position: absolute;
+      bottom: 5px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      font-weight: bold;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 5px;
+      z-index: 1;
+    }
+
+    canvas.overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      z-index: 2;
+    }
+
+    .replay-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      z-index: 3;
+      padding: 6px 8px;
+      font-size: 13px;
+      border-radius: 8px;
+      border: none;
+      background: rgba(255,255,255,0.9);
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      gap: 15px;
+    }
+
+    button.control {
+      padding: 10px 20px;
+      font-size: 14px;
+      border: none;
+      border-radius: 8px;
+      background: #4CAF50;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button.control:hover {
+      background: #45a049;
+    }
+
+    @media (max-width: 480px) {
+      .card {
+        width: 120px;
+        height: 120px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Scratch & Speak in English</h1>
+  <div class="card-container" id="cardContainer"></div>
+  <div class="controls">
+    <button id="resetBtn" class="control">🔄 Reset All</button>
+  </div>
+
+  <script>
+    const words = [
+      { word: 'Dog', emoji: '🐶', color: '#FFE8E8' },
+      { word: 'Car', emoji: '🚗', color: '#FFF7D9' },
+      { word: 'Book', emoji: '📚', color: '#E8F0FF' },
+      { word: 'Phone', emoji: '📱', color: '#E8FFE8' },
+      { word: 'Tree', emoji: '🌳', color: '#E7FFF5' },
+      { word: 'House', emoji: '🏠', color: '#FFF0F7' },
+      { word: 'Bike', emoji: '🚲', color: '#FFF6E8' },
+      { word: 'Pen', emoji: '🖊️', color: '#FFF9E8' },
+      { word: 'Computer', emoji: '💻', color: '#EEF2FF' },
+      { word: 'Flower', emoji: '🌸', color: '#FFF0F0' }
+    ];
+
+    function makeSVGDataURL(emoji, bg) {
+      const svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns='http://www.w3.org/2000/svg' width='512' height='512'><rect width='100%' height='100%' rx='40' ry='40' fill='${bg}'/><text x='50%' y='52%' font-size='220' text-anchor='middle' alignment-baseline='middle' dominant-baseline='middle'>${emoji}</text></svg>`;
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+
+    function speak(word) {
+      if (!window.speechSynthesis) return;
+      const u = new SpeechSynthesisUtterance(word);
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+
+    function createCard(item) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.word = item.word;
+
+      const img = document.createElement('img');
+      img.alt = item.word;
+      img.src = makeSVGDataURL(item.emoji, item.color);
+
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = item.word;
+
+      card.appendChild(img);
+      card.appendChild(label);
+
+      const canvas = document.createElement('canvas');
+      canvas.className = 'overlay';
+      canvas.setAttribute('aria-hidden', 'true');
+      card.appendChild(canvas);
+
+      const replayBtn = document.createElement('button');
+      replayBtn.className = 'replay-btn';
+      replayBtn.type = 'button';
+      replayBtn.textContent = '🔊';
+      replayBtn.title = 'Hear word';
+      replayBtn.addEventListener('click', (e) => { e.stopPropagation(); speak(item.word); });
+      card.appendChild(replayBtn);
+
+      const ctx = canvas.getContext('2d');
+      let isDown = false;
+      let revealed = false;
+      let checkInterval = null;
+      let dpr = 1;
+      let brush = 18;
+
+      function setupCanvas() {
+        const cssW = card.clientWidth || 160;
+        const cssH = card.clientHeight || 160;
+        dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(cssW * dpr));
+        canvas.height = Math.max(1, Math.floor(cssH * dpr));
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = '#B0B0B0';
+        ctx.fillRect(0, 0, cssW, cssH);
+        for (let i = 0; i < 10; i++) {
+          const rx = Math.random() * cssW;
+          const ry = Math.random() * cssH;
+          ctx.fillStyle = 'rgba(255,255,255,0.06)';
+          ctx.fillRect(rx, ry, Math.random() * 12, Math.random() * 5);
+        }
+        brush = Math.max(12, Math.min(30, Math.round(cssW / 12)));
+        if (checkInterval) clearInterval(checkInterval);
+        checkInterval = setInterval(checkScratch, 700);
+      }
+
+      function pointerDown(e) {
+        if (revealed) return;
+        isDown = true;
+        try { if (e.pointerId) canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        draw(e);
+      }
+
+      function pointerUp(e) {
+        isDown = false;
+        try { if (e.pointerId) canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+
+      function pointerMove(e) {
+        if (!isDown) return;
+        draw(e);
+      }
+
+      function draw(e) {
+        if (revealed) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left);
+        const y = (e.clientY - rect.top);
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.beginPath();
+        ctx.arc(x, y, brush, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function checkScratch() {
+        try {
+          const cw = canvas.width;
+          const ch = canvas.height;
+          if (!cw || !ch) return;
+          const imageData = ctx.getImageData(0, 0, cw, ch).data;
+          let cleared = 0;
+          let samples = 0;
+          const step = 4 * 16;
+          for (let i = 3; i < imageData.length; i += step) {
+            samples++;
+            if (imageData[i] === 0) cleared++;
+          }
+          if (samples === 0) return;
+          if (!revealed && (cleared / samples) > 0.5) {
+            revealed = true;
+            canvas.style.transition = 'opacity 0.5s ease';
+            canvas.style.opacity = '0';
+            setTimeout(() => { try { canvas.remove(); } catch (err) {} }, 520);
+            speak(item.word);
+            if (checkInterval) { clearInterval(checkInterval); checkInterval = null; }
+            canvas.removeEventListener('pointerdown', pointerDown);
+            canvas.removeEventListener('pointerup', pointerUp);
+            canvas.removeEventListener('pointermove', pointerMove);
+            canvas.removeEventListener('pointercancel', pointerUp);
+            window.removeEventListener('resize', setupCanvas);
+          }
+        } catch (err) {}
+      }
+
+      canvas.addEventListener('pointerdown', pointerDown);
+      canvas.addEventListener('pointerup', pointerUp);
+      canvas.addEventListener('pointermove', pointerMove);
+      canvas.addEventListener('pointercancel', pointerUp);
+
+      window.addEventListener('resize', setupCanvas);
+
+      card._cleanup = function() {
+        try {
+          if (checkInterval) { clearInterval(checkInterval); checkInterval = null; }
+          canvas.removeEventListener('pointerdown', pointerDown);
+          canvas.removeEventListener('pointerup', pointerUp);
+          canvas.removeEventListener('pointermove', pointerMove);
+          canvas.removeEventListener('pointercancel', pointerUp);
+          window.removeEventListener('resize', setupCanvas);
+        } catch (err) {}
+      };
+
+      function init() {
+        requestAnimationFrame(() => {
+          if (img.complete) { setupCanvas(); } else { img.onload = setupCanvas; img.onerror = setupCanvas; }
+        });
+      }
+
+      card._init = init;
+      return card;
+    }
+
+    function loadCards() {
+      const container = document.getElementById('cardContainer');
+      const old = Array.from(container.querySelectorAll('.card'));
+      old.forEach(c => { if (c._cleanup) c._cleanup(); });
+      container.innerHTML = '';
+      words.forEach(item => {
+        const c = createCard(item);
+        container.appendChild(c);
+        c._init();
+      });
+    }
+
+    document.getElementById('resetBtn').addEventListener('click', loadCards);
+    loadCards();
+  </script>
+</body>
+</html>
